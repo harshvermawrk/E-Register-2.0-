@@ -1,11 +1,12 @@
 import { members, type Member, type MemberStatus } from "./mockData";
+import { dateToFinancialYear, financialYears, parseRegisterDate, type MemberPayment } from "../services/registerService";
 
+export { financialYears };
 export type ManagedMember = Member & { accountNumber: string; entryAmount?: number };
 
 export type MemberFields = Pick<Member, "name" | "hometown" | "phone" | "joinDate" | "status">;
 export type YearWiseEntryFields = Pick<Member, "name" | "joinDate"> & { amount: number };
 
-export const financialYears = ["2026-27", "2025-26", "2024-25"] as const;
 export const annualMembershipFee = 12000;
 
 export const initialManagedMembers: ManagedMember[] = members.map((member) => ({
@@ -37,7 +38,8 @@ function parseMemberDate(value: string) {
 }
 
 export function getMemberEntryYear(value: string) {
-  return parseMemberDate(value)?.getFullYear() ?? null;
+  const year = dateToFinancialYear(value);
+  return year ? Number(year.slice(0, 4)) : null;
 }
 
 export function formatMemberDate(value: string) {
@@ -46,36 +48,43 @@ export function formatMemberDate(value: string) {
 }
 
 export function toDateInput(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+  const date = parseRegisterDate(value) ?? new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function memberFinancials(member: ManagedMember, year: string) {
-  const yearIndex = Math.max(0, financialYears.indexOf(year as (typeof financialYears)[number]));
-  const due = yearIndex === 0
-    ? Math.min(member.outstandingAmount, annualMembershipFee)
-    : yearIndex === 1
-      ? member.status === "Inactive"
-        ? Math.min(member.outstandingAmount, annualMembershipFee)
-        : member.sno % 5 === 0 ? 1500 : 0
-      : member.sno % 7 === 0 ? 2500 : 0;
-  const paid = annualMembershipFee - due;
-  const paymentCount = Math.ceil(paid / 1000);
+export function memberFinancials(member: ManagedMember, year: string, payments: MemberPayment[] = []) {
+  const memberYear = dateToFinancialYear(member.joinDate);
+  const eligible = memberYear !== null && Number(memberYear.slice(0, 4)) <= Number(year.slice(0, 4));
+  const yearlyPayments = payments
+    .filter((payment) => payment.memberId === member.id && dateToFinancialYear(payment.date) === year)
+    .sort((first, second) => (parseRegisterDate(first.date)?.getTime() ?? 0) - (parseRegisterDate(second.date)?.getTime() ?? 0));
+  const paid = yearlyPayments.filter((payment) => payment.status === "Paid").reduce((total, payment) => total + payment.amount, 0);
+  const paidPayments = yearlyPayments.filter((payment) => payment.status === "Paid");
+  const due = eligible ? Math.max(0, annualMembershipFee - paid) : 0;
+  const paymentCount = yearlyPayments.length;
   const startYear = Number(year.slice(0, 4));
   let balance = 0;
   const statement = Array.from({ length: 12 }, (_, index) => {
     const monthIndex = (index + 3) % 12;
     const dateYear = monthIndex >= 3 ? startYear : startYear + 1;
-    const credit = Math.min(1000, Math.max(0, paid - index * 1000));
-    const monthlyDue = 1000 - credit;
-    balance += monthlyDue;
+    const credit = paidPayments
+      .filter((payment) => {
+        const date = parseRegisterDate(payment.date);
+        return date?.getFullYear() === dateYear && date.getMonth() === monthIndex;
+      })
+      .reduce((total, payment) => total + payment.amount, 0);
+    const monthlyDue = eligible ? annualMembershipFee / 12 : 0;
+    balance = Math.max(0, balance + monthlyDue - credit);
     const date = credit > 0
-      ? new Date(dateYear, monthIndex, 15).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+      ? paidPayments.find((payment) => {
+        const paymentDate = parseRegisterDate(payment.date);
+        return paymentDate?.getFullYear() === dateYear && paymentDate.getMonth() === monthIndex;
+      })?.date ?? "—"
       : "—";
     return { sno: index + 1, date, credit, due: monthlyDue, balance };
   });
 
-  return { paid, due, paymentCount, statement };
+  return { paid, due, paymentCount, statement, payments: yearlyPayments };
 }
 
 export function createManagedMember(fields: MemberFields, sno: number, entryAmount?: number): ManagedMember {

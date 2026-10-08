@@ -2,7 +2,7 @@
 
 E-Register is a digital member and yearly-record management application. It is intended to make member information, year-wise entries, collections, and expenses easier to maintain than paper registers.
 
-The project currently contains a React + TypeScript frontend and an Electron desktop shell. It is under development; the frontend uses example data and local storage, and there is no backend, database, or authentication system yet.
+The project contains a React + TypeScript frontend and an Electron desktop shell. It can run in local sample mode without a cloud account, or connect to a free Supabase test project for admin sign-in and shared cloud data.
 
 ## Technology
 
@@ -86,23 +86,49 @@ The Windows icon files are:
 
 The current icon is a generic document placeholder. Replace `assets/icons/icon.ico` with the approved square Windows icon before publishing; include a 256 × 256 image for best Windows display quality.
 
+## Free backend test setup
+
+The test backend uses Supabase Auth and a managed PostgreSQL database. Supabase stores register records in the cloud region selected when the test project is created. The app uses the public project URL and anon key; PostgreSQL row-level security and an admin allowlist restrict data access. Never put a Supabase service-role key in this frontend.
+
+### Create the test project
+
+1. Create a free Supabase project and select the region you want for test data.
+2. Open **SQL Editor** in that project and run [`supabase/schema.sql`](supabase/schema.sql).
+3. In **Authentication > Users**, create the one admin test account. Turn off public sign-ups in the project’s Auth settings.
+4. Add that account to the allowlist from SQL Editor, replacing the sample email with its exact sign-in email:
+
+   ```sql
+   insert into public.admin_users (user_id)
+   select id from auth.users where email = 'admin@example.com'
+   on conflict (user_id) do nothing;
+   ```
+
+5. Copy `.env.example` to `.env.local` and fill in the project URL and public anon/publishable key from **Project Settings > API**. `.env.local` is ignored by Git.
+6. Start the web app with `npm run web`, then sign in with the approved admin account.
+
+When the new test database is completely empty, the app seeds it with the project’s fictional sample members, payments, and expenses. Existing data is never overwritten by this sample seed. The header labels this as a cloud test workspace. Keep real member and financial data out of this free test project.
+
+Supabase Free currently includes 500 MB of database storage, but pauses projects after a week of inactivity and does not include automatic database backups. Use it for development and sample data; decide on a paid, backed-up production setup before relying on it for live records. Check [current Supabase plan details](https://supabase.com/pricing) before making that later decision.
+
+### Local sample mode
+
+When Supabase environment values are not configured, the app continues to use the existing fictional sample data and browser local storage. This mode is for previewing the interface on the current browser/device; it does not synchronize records between devices.
+
 ## Architecture
 
 ```text
-Windows
-  ↓
-Electron desktop shell (electron/)
+Browser or Electron desktop shell
   ↓
 React + TypeScript frontend (src/)
-  ↓
-Future API service
-  ↓
-Future database (SQLite initially; not included)
+  ├── Local sample mode: browser local storage
+  └── Cloud test mode: Supabase Auth + PostgreSQL with admin-only RLS
 ```
 
-Electron uses context isolation, disables Node.js integration in the renderer, and exposes only a small app-version API from its preload script. Application navigation uses hash-based routes in Electron so it works with packaged local files; browser preview uses the existing browser router. Future frontend API communication belongs in `src/services/`.
+Electron uses context isolation, disables Node.js integration in the renderer, and exposes only a small app-version API from its preload script. Application navigation uses hash-based routes in Electron so it works with packaged local files; browser preview uses the existing browser router. Supabase access and row mapping live in `src/services/`.
 
-No backend or database is implemented. Expense examples are stored in local storage for demonstration. Configure only a public API URL in a local `.env` file via `VITE_API_BASE_URL`; `.env` files are ignored by git. Do not put passwords, API keys, or other secrets in `VITE_` variables, because Vite embeds those values in the frontend.
+The test backend is an externally hosted Supabase project configured using the steps above. The project URL and anon/publishable key are public frontend configuration; the database service-role key and admin password must never be added to a `VITE_` variable because Vite embeds those values in the frontend.
+
+The existing `server/` folder is an earlier Cloud Run/Cloud SQL draft. It is not used by this free Supabase test setup; do not run it for this configuration.
 
 ## Useful commands
 
@@ -117,7 +143,7 @@ No backend or database is implemented. Expense examples are stored in local stor
 
 ## Project status
 
-The desktop packaging workflow is configured for Windows. Backend services, SQLite persistence, authentication, and production signing are future work.
+The desktop packaging workflow is configured for Windows. Supabase cloud sync is ready when a test project is configured. Public web hosting, production backups, and production deployment decisions are still future work.
 
 ## Developer
 

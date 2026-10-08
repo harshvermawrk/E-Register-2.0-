@@ -1,10 +1,13 @@
 import { useMemo, useState, type ClipboardEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import * as XLSX from "xlsx";
 import type { ManagedMember, YearWiseEntryFields } from "../data/memberManagement";
-import { formatCurrency, formatMemberDate, getMemberEntryYear, memberFinancials, toDateInput } from "../data/memberManagement";
+import { annualMembershipFee, formatCurrency, formatMemberDate, getMemberEntryYear, memberFinancials, toDateInput } from "../data/memberManagement";
+import { financialYearForStartYear, formatFinancialYear, type MemberPayment } from "../services/registerService";
 
 interface YearWiseListPageProps {
   members: ManagedMember[];
+  payments: MemberPayment[];
   onCreate: (entries: YearWiseEntryFields[]) => void;
 }
 
@@ -56,7 +59,7 @@ function normalizePastedAmount(value: string) {
   return value.trim().replace(/[^\d.-]/g, "");
 }
 
-export default function YearWiseListPage({ members, onCreate }: YearWiseListPageProps) {
+export default function YearWiseListPage({ members, payments, onCreate }: YearWiseListPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
@@ -66,20 +69,24 @@ export default function YearWiseListPage({ members, onCreate }: YearWiseListPage
 
   const availableYears = useMemo(() => {
     const entryYears = members.map((member) => getMemberEntryYear(member.joinDate)).filter((year): year is number => year !== null);
-    return [...new Set([...entryYears, new Date().getFullYear()])].sort((a, b) => b - a);
+    const now = new Date();
+    const currentYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    return [...new Set([...entryYears, currentYear])].sort((a, b) => b - a);
   }, [members]);
   const mostRecentEntryYear = members.reduce<number | null>((latest, member) => {
     const year = getMemberEntryYear(member.joinDate);
     return year !== null && (latest === null || year > latest) ? year : latest;
   }, null);
   const requestedYear = Number(searchParams.get("year"));
-  const selectedYear = availableYears.includes(requestedYear) ? requestedYear : mostRecentEntryYear ?? new Date().getFullYear();
+  const now = new Date();
+  const currentFinancialYearStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const selectedYear = availableYears.includes(requestedYear) ? requestedYear : mostRecentEntryYear ?? currentFinancialYearStart;
 
   const filteredMembers = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return members
       .filter((member) => getMemberEntryYear(member.joinDate) === selectedYear && (!query || member.name.toLocaleLowerCase().includes(query)))
-      .map((member) => ({ member, credit: member.entryAmount ?? memberFinancials(member, "2026-27").paid, timestamp: new Date(member.joinDate).getTime() }))
+      .map((member) => ({ member, credit: memberFinancials(member, financialYearForStartYear(selectedYear), payments).paid, timestamp: new Date(member.joinDate).getTime() }))
       .sort((a, b) => {
         if (sortBy === "latest") return b.timestamp - a.timestamp;
         if (sortBy === "first") return a.timestamp - b.timestamp;
@@ -88,10 +95,24 @@ export default function YearWiseListPage({ members, onCreate }: YearWiseListPage
         if (sortBy === "credit-high") return b.credit - a.credit;
         return a.credit - b.credit;
       });
-  }, [members, search, selectedYear, sortBy]);
+  }, [members, payments, search, selectedYear, sortBy]);
 
   function openMember(memberId: string) {
-    navigate(`/member/${encodeURIComponent(memberId)}?year=${selectedYear}`);
+    navigate(`/member/${encodeURIComponent(memberId)}?year=${financialYearForStartYear(selectedYear)}`);
+  }
+
+  function exportYear() {
+    const rows = filteredMembers.map(({ member, credit }) => ({
+      "Financial year": financialYearForStartYear(selectedYear),
+      "Member ID": member.id,
+      Name: member.name,
+      "Date joined": formatMemberDate(member.joinDate),
+      "Recorded paid amount": credit,
+      "Annual membership fee": annualMembershipFee,
+    }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Year-wise members");
+    XLSX.writeFile(workbook, `members-${financialYearForStartYear(selectedYear)}.xlsx`);
   }
 
   function startQuickEntry() {
@@ -160,9 +181,9 @@ export default function YearWiseListPage({ members, onCreate }: YearWiseListPage
   }
 
   const isSearching = search.trim().length > 0;
-  const initialEntryDate = selectedYear === new Date().getFullYear()
+  const initialEntryDate = selectedYear === currentFinancialYearStart
     ? new Date().toISOString().slice(0, 10)
-    : `${selectedYear}-01-01`;
+    : `${selectedYear}-04-01`;
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-5 py-7 sm:px-8 lg:px-10">
@@ -176,21 +197,21 @@ export default function YearWiseListPage({ members, onCreate }: YearWiseListPage
           <label className="flex items-center gap-3 text-sm font-medium text-slate-600">
             <span>Year</span>
             <span className="relative">
-              <select aria-label="Select entry year" value={selectedYear} onChange={(event) => setSearchParams({ year: event.target.value })} className="form-control min-w-[116px] appearance-none pr-9 font-semibold text-slate-800">
-                {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              <select aria-label="Select financial year" value={selectedYear} onChange={(event) => setSearchParams({ year: event.target.value })} className="form-control min-w-[138px] appearance-none pr-9 font-semibold text-slate-800">
+                {availableYears.map((year) => <option key={year} value={year}>FY {formatFinancialYear(financialYearForStartYear(year))}</option>)}
               </select>
               <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
             </span>
           </label>
           {drafts === null
-            ? <button onClick={startQuickEntry} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Add entry</button>
+            ? <><button onClick={exportYear} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">Export FY list</button><button onClick={startQuickEntry} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Add entry</button></>
             : <button onClick={() => { setDrafts(null); setEntryError(""); }} className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">Cancel</button>}
         </div>
       </header>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
         <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div><h3 className="font-display text-base font-semibold text-slate-900">Member entries <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 font-sans text-xs font-semibold text-slate-500">{filteredMembers.length}</span></h3><p className="mt-1 text-xs text-slate-400">Entries recorded in {selectedYear}</p></div>
+          <div><h3 className="font-display text-base font-semibold text-slate-900">Member entries <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 font-sans text-xs font-semibold text-slate-500">{filteredMembers.length}</span></h3><p className="mt-1 text-xs text-slate-400">Entries recorded in FY {formatFinancialYear(financialYearForStartYear(selectedYear))} · Membership fee {formatCurrency(annualMembershipFee)}</p></div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <label className="relative block sm:w-72"><span className="sr-only">Search member by name</span><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search member by name..." className="form-control pl-10" /></label>
             <label className="flex items-center gap-2 text-xs font-medium text-slate-500"><span className="hidden sm:inline">Sort by</span><select aria-label="Sort member entries" value={sortBy} onChange={(event) => setSortBy(event.target.value as SortOption)} className="form-control min-w-[160px]"><optgroup label="Sort by">{sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</optgroup></select></label>

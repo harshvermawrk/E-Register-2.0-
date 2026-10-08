@@ -34,6 +34,7 @@ function Icon({ kind }: { kind: "search" | "download" | "plus" | "edit" | "delet
 export default function MembersListPage({ members, onCreate, onUpdate, onDelete }: MembersListPageProps) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"All" | ManagedMember["status"]>("All");
   const [sortBy, setSortBy] = useState<SortField>("name");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedMember | null>(null);
@@ -42,13 +43,14 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
     const query = search.trim().toLowerCase();
     return members
       .filter((member) => !query || [member.name, member.hometown, member.phone, member.id].some((value) => value.toLowerCase().includes(query)))
+      .filter((member) => statusFilter === "All" || member.status === statusFilter)
       .sort((a, b) => sortBy === "joinDate"
         ? new Date(a.joinDate).getTime() - new Date(b.joinDate).getTime()
         : a[sortBy].localeCompare(b[sortBy], undefined, { numeric: true }));
-  }, [members, search, sortBy]);
+  }, [members, search, sortBy, statusFilter]);
 
   function exportExcel() {
-    const worksheet = XLSX.utils.json_to_sheet(members.map((member) => ({
+    const worksheet = XLSX.utils.json_to_sheet(filteredMembers.map((member) => ({
       "Member ID": member.id,
       Name: member.name,
       City: member.hometown,
@@ -110,6 +112,7 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:flex-1 lg:justify-end">
             <label className="relative block min-w-0 flex-1 sm:min-w-[220px]"><span className="sr-only">Search by name, city, phone, or member ID</span><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icon kind="search" /></span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search members..." className="form-control pl-10" /></label>
             <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-500"><span className="sr-only">Sort members</span><span className="hidden lg:inline">Sort by</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortField)} className="form-control min-w-[145px]"><option value="name">Name (A–Z)</option><option value="hometown">City</option><option value="joinDate">Join date</option><option value="id">Member ID</option></select></label>
+            <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-500"><span className="sr-only">Filter by member status</span><select aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="form-control min-w-[132px]"><option value="All">All statuses</option><option value="Active">Active</option><option value="Pending">Pending</option><option value="Inactive">Inactive</option></select></label>
             <button onClick={exportExcel} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"><Icon kind="download" /><span>Export Excel</span></button>
           </div>
         </div>

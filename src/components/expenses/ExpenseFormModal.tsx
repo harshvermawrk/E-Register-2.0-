@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { ExpenseFields, ExpensePeriod, ExpenseRecord } from "../../services/expenseService";
+import { dateToFinancialYear, financialYearForStartYear } from "../../services/registerService";
 
 interface ExpenseFormModalProps {
   year: number;
@@ -41,14 +42,25 @@ export default function ExpenseFormModal({ year, periods, expense, onClose, onSa
   const [notes, setNotes] = useState(expense?.notes ?? "");
   const [errors, setErrors] = useState<FormErrors>({});
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const numericAmount = Number(amount);
     const nextErrors: FormErrors = {};
     if (!title.trim()) nextErrors.title = "Enter an expense name.";
     if (!amount.trim() || !Number.isFinite(numericAmount) || numericAmount <= 0) nextErrors.amount = "Enter an amount greater than zero.";
-    if (!isValidDate(date)) nextErrors.date = "Enter a valid date.";
+    if (!isValidDate(date) || dateToFinancialYear(date) !== financialYearForStartYear(year)) nextErrors.date = `Choose a date within FY ${year}–${String(year + 1).slice(-2)} (April–March).`;
     if (!periods.some((period) => period.id === periodId)) nextErrors.periodId = "Select an expense period.";
+    const month = Number(date.slice(5, 7));
+    const expectedPeriod = month >= 4 && month <= 6 ? "period-1" : month >= 7 && month <= 9 ? "period-2" : month >= 10 && month <= 12 ? "period-3" : month >= 1 && month <= 3 ? "period-4" : "";
+    if (isValidDate(date) && periodId !== expectedPeriod) nextErrors.periodId = "Choose the period that contains the selected date.";
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) return;

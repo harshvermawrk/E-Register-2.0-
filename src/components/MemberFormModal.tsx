@@ -25,8 +25,17 @@ export default function MemberFormModal({ member, initialJoinDate, showStatusCon
     setStatus(member?.status ?? "Active");
   }, [initialJoinDate, member]);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!name.trim() || !city.trim() || !/^[+()\d\s-]{7,20}$/.test(phone.trim()) || !toDateInput(joinDate)) return;
     onSave({ name: name.trim(), hometown: city.trim(), phone: phone.trim(), joinDate: formatMemberDate(joinDate), status });
   }
 
@@ -48,7 +57,7 @@ export default function MemberFormModal({ member, initialJoinDate, showStatusCon
           <label className="block text-sm font-medium text-slate-700">Full name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Asha Kapoor" className="form-control mt-1.5" /></label>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="block text-sm font-medium text-slate-700">City<input required value={city} onChange={(event) => setCity(event.target.value)} placeholder="City" className="form-control mt-1.5" /></label>
-            <label className="block text-sm font-medium text-slate-700">Phone<input required type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" className="form-control mt-1.5" /></label>
+            <label className="block text-sm font-medium text-slate-700">Phone<input required type="tel" pattern="[+()0-9 -]{7,20}" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" className="form-control mt-1.5" /></label>
             <label className="block text-sm font-medium text-slate-700">Join date<input required type="date" value={joinDate} onChange={(event) => setJoinDate(event.target.value)} className="form-control mt-1.5" /></label>
             {showStatusControl && <label className="block text-sm font-medium text-slate-700">Status<select value={status} onChange={(event) => setStatus(event.target.value as MemberFields["status"])} className="form-control mt-1.5"><option>Active</option><option>Pending</option><option>Inactive</option></select></label>}
           </div>

@@ -7,7 +7,6 @@ export interface ExpensePeriod {
 export interface CollectionYear {
   id: number;
   label: string;
-  totalCollection: number;
 }
 
 export interface ExpenseRecord {
@@ -18,6 +17,9 @@ export interface ExpenseRecord {
   amount: number;
   date: string;
   notes: string;
+  paymentMode?: "UPI" | "Cash" | "Bank Transfer" | "Cheque";
+  status?: "Paid" | "Pending" | "Failed";
+  receiptId?: string;
 }
 
 export type ExpenseFields = Omit<ExpenseRecord, "id">;
@@ -36,9 +38,11 @@ export const expensePeriods: ExpensePeriod[] = [
 ];
 
 export const collectionYears: CollectionYear[] = [
-  { id: 2026, label: "2026–27", totalCollection: 1_000_000 },
-  { id: 2025, label: "2025–26", totalCollection: 920_000 },
-  { id: 2024, label: "2024–25", totalCollection: 870_000 },
+  { id: 2026, label: "2026–27" },
+  { id: 2025, label: "2025–26" },
+  { id: 2024, label: "2024–25" },
+  { id: 2023, label: "2023–24" },
+  { id: 2022, label: "2022–23" },
 ];
 
 export const initialExpenses: ExpenseRecord[] = [
@@ -109,8 +113,8 @@ export function saveExpenses(expenses: ExpenseRecord[]): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
 }
 
-export function calculateExpenseSummary(expenses: ExpenseRecord[], year: number): ExpenseSummary {
-  const totalCollection = collectionYears.find((item) => item.id === year)?.totalCollection ?? 0;
+export function calculateExpenseSummary(expenses: ExpenseRecord[], year: number, collection: number): ExpenseSummary {
+  const totalCollection = collection;
   const totalExpense = expenses
     .filter((expense) => expense.year === year)
     .reduce((total, expense) => total + expense.amount, 0);

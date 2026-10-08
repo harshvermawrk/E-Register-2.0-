@@ -1,9 +1,12 @@
 interface TopNavbarProps {
   pageTitle: string;
   sidebarCollapsed: boolean;
+  dataMode?: "local-sample" | "cloud-test";
+  accountEmail?: string;
+  onSignOut?: () => void;
 }
 
-export default function TopNavbar({ pageTitle, sidebarCollapsed }: TopNavbarProps) {
+export default function TopNavbar({ pageTitle, sidebarCollapsed, dataMode = "local-sample", accountEmail, onSignOut }: TopNavbarProps) {
   return (
     <div
       className="flex items-center justify-between px-3 sm:px-6 shrink-0 z-20"
@@ -32,6 +35,9 @@ export default function TopNavbar({ pageTitle, sidebarCollapsed }: TopNavbarProp
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1 sm:gap-3">
+        <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-800 sm:inline-flex">
+          {dataMode === "cloud-test" ? "Cloud test · sample data" : "Local sample data"}
+        </span>
         {/* Admin Profile Avatar */}
         <div className="flex items-center gap-2 rounded-xl px-2 py-1.5">
           <div
@@ -41,10 +47,11 @@ export default function TopNavbar({ pageTitle, sidebarCollapsed }: TopNavbarProp
             AD
           </div>
           <div className="navbar-account-copy text-left">
-            <p className="text-sm font-medium" style={{ color: "#0F172A", lineHeight: "1.2" }}>Admin</p>
-            <p className="text-xs" style={{ color: "#94A3B8", lineHeight: "1.2" }}>Super Admin</p>
+            <p className="max-w-[150px] truncate text-sm font-medium" style={{ color: "#0F172A", lineHeight: "1.2" }}>{accountEmail || "Admin"}</p>
+            <p className="text-xs" style={{ color: "#94A3B8", lineHeight: "1.2" }}>{dataMode === "cloud-test" ? "Test administrator" : "Local demo"}</p>
           </div>
         </div>
+        {onSignOut && <button type="button" onClick={onSignOut} className="rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">Sign out</button>}
       </div>
 
     </div>
