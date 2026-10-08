@@ -11,7 +11,8 @@
     "build:web:electron": "vite build --base=./",
     "build:electron": "tsc -p tsconfig.electron.json --noEmit && esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.js && esbuild electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-electron/preload.cjs",
     "build": "npm run build:web:electron && npm run build:electron",
-    "package": "npm run build && electron-builder --win nsis",
+    "dist": "npm run build && electron-builder --win nsis",
+    "package": "npm run dist",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "format": "oxfmt"
@@ -42,7 +43,7 @@
   },
   "build": {
     "appId": "com.eregister.dashboard",
-    "productName": "E-Register Dashboard",
+    "productName": "E-Register",
     "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
@@ -66,9 +67,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "E-Register Dashboard",
-      "runAfterFinish": true
+      "shortcutName": "E-Register",
+      "runAfterFinish": true,
+      "installerIcon": "assets/icons/icon.ico",
+      "uninstallerIcon": "assets/icons/icon.ico",
+      "installerHeaderIcon": "assets/icons/icon.ico"
     },
-    "artifactName": "E-Register-Dashboard-Setup-${version}.${ext}"
+    "artifactName": "E-Register-Setup-${version}.${ext}"
   }
 }

@@ -5,24 +5,21 @@ import { formatMemberDate, toDateInput } from "../data/memberManagement";
 interface MemberFormModalProps {
   member: ManagedMember | null;
   initialJoinDate?: string;
-  showStatusControl?: boolean;
   onClose: () => void;
   onSave: (fields: MemberFields) => void;
 }
 
-export default function MemberFormModal({ member, initialJoinDate, showStatusControl = true, onClose, onSave }: MemberFormModalProps) {
+export default function MemberFormModal({ member, initialJoinDate, onClose, onSave }: MemberFormModalProps) {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [phone, setPhone] = useState("");
   const [joinDate, setJoinDate] = useState("");
-  const [status, setStatus] = useState<MemberFields["status"]>("Active");
 
   useEffect(() => {
     setName(member?.name ?? "");
     setCity(member?.hometown ?? "");
     setPhone(member?.phone ?? "");
     setJoinDate(member ? toDateInput(member.joinDate) : initialJoinDate ?? new Date().toISOString().slice(0, 10));
-    setStatus(member?.status ?? "Active");
   }, [initialJoinDate, member]);
 
   useEffect(() => {
@@ -36,7 +33,7 @@ export default function MemberFormModal({ member, initialJoinDate, showStatusCon
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim() || !city.trim() || !/^[+()\d\s-]{7,20}$/.test(phone.trim()) || !toDateInput(joinDate)) return;
-    onSave({ name: name.trim(), hometown: city.trim(), phone: phone.trim(), joinDate: formatMemberDate(joinDate), status });
+    onSave({ name: name.trim(), hometown: city.trim(), phone: phone.trim(), joinDate: formatMemberDate(joinDate), status: member?.status ?? "Active" });
   }
 
   return (
@@ -59,7 +56,6 @@ export default function MemberFormModal({ member, initialJoinDate, showStatusCon
             <label className="block text-sm font-medium text-slate-700">City<input required value={city} onChange={(event) => setCity(event.target.value)} placeholder="City" className="form-control mt-1.5" /></label>
             <label className="block text-sm font-medium text-slate-700">Phone<input required type="tel" pattern="[+()0-9 -]{7,20}" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" className="form-control mt-1.5" /></label>
             <label className="block text-sm font-medium text-slate-700">Join date<input required type="date" value={joinDate} onChange={(event) => setJoinDate(event.target.value)} className="form-control mt-1.5" /></label>
-            {showStatusControl && <label className="block text-sm font-medium text-slate-700">Status<select value={status} onChange={(event) => setStatus(event.target.value as MemberFields["status"])} className="form-control mt-1.5"><option>Active</option><option>Pending</option><option>Inactive</option></select></label>}
           </div>
           <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>

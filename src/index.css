@@ -56,6 +56,13 @@ button { cursor: pointer; }
 .form-control::placeholder { color: #a0aec0; }
 .form-control:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
 
+.member-list-search-input {
+  height: 50px;
+  min-height: 50px;
+  padding-left: 48px;
+  padding-right: 48px;
+}
+
 .action-button {
   display: inline-flex;
   min-height: 38px;

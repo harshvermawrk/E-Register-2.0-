@@ -1,7 +1,6 @@
-import { initialManagedMembers, type ManagedMember } from "../data/memberManagement";
-import { initialExpenses, type ExpenseRecord } from "./expenseService";
+import type { ManagedMember } from "../data/memberManagement";
+import type { ExpenseRecord } from "./expenseService";
 import { parseRegisterDate, type MemberPayment } from "./registerService";
-import { members as sampleMembers, transactions as sampleTransactions } from "../data/mockData";
 import { requireSupabase } from "./supabaseClient";
 
 type MemberRow = {
@@ -44,14 +43,45 @@ type ExpenseRow = {
   receipt_id: string | null;
 };
 
+const READ_PAGE_SIZE = 1000;
+
 export interface CloudRegisterData {
   members: ManagedMember[];
   payments: MemberPayment[];
   expenses: ExpenseRecord[];
 }
 
-function throwIfError(error: { message: string } | null, operation: string) {
-  if (error) throw new Error(`${operation}: ${error.message}`);
+function throwIfError(error: { code?: string; message: string } | null, operation: string) {
+  if (!error) return;
+
+  const guidance = error.code === "42501"
+    ? "Your account does not have permission to make this change."
+    : error.code === "23505"
+      ? "A record with one of these identifiers already exists. Refresh the register and try again."
+      : error.code === "23503"
+        ? "A related record could not be found. Refresh the register and try again."
+        : error.code === "23514"
+          ? "One or more values are invalid. Check the form and try again."
+          : "Check your connection and admin access, then try again.";
+
+  console.error(`[E-Register] ${operation} failed (database error ${error.code ?? "unknown"}).`);
+  throw new Error(`${operation}. ${guidance}`);
+}
+
+async function loadAllRows<T>(
+  loadPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  operation: string,
+): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += READ_PAGE_SIZE) {
+    const { data, error } = await loadPage(from, from + READ_PAGE_SIZE - 1);
+    throwIfError(error, operation);
+
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < READ_PAGE_SIZE) return rows;
+  }
 }
 
 function toIsoDate(value: string) {
@@ -154,45 +184,64 @@ function rowToExpense(row: ExpenseRow): ExpenseRecord {
 
 async function readCloudRegister(): Promise<CloudRegisterData> {
   const client = requireSupabase();
-  const [memberResult, paymentResult, expenseResult] = await Promise.all([
-    client.from("members").select("*").is("archived_at", null).order("sno"),
-    client.from("payments").select("*").order("payment_date", { ascending: false }),
-    client.from("expenses").select("*").is("archived_at", null).order("expense_date", { ascending: false }),
+  const [memberRows, paymentRows, expenseRows] = await Promise.all([
+    loadAllRows<MemberRow>(
+      (from, to) => client.from("members")
+        .select("id,sno,account_number,name,initials,avatar_color,hometown,phone,email,status,join_date,entry_amount,archived_at")
+        .is("archived_at", null)
+        .order("sno")
+        .order("id")
+        .range(from, to),
+      "Members could not be loaded",
+    ),
+    loadAllRows<PaymentRow>(
+      (from, to) => client.from("payments")
+        .select("id,member_id,payment_date,amount,payment_mode,status,receipt_id,description")
+        .order("payment_date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+      "Payments could not be loaded",
+    ),
+    loadAllRows<ExpenseRow>(
+      (from, to) => client.from("expenses")
+        .select("id,financial_year_start,period_id,title,amount,expense_date,notes,payment_mode,status,receipt_id")
+        .is("archived_at", null)
+        .order("expense_date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+      "Expenses could not be loaded",
+    ),
   ]);
-  throwIfError(memberResult.error, "Members could not be loaded");
-  throwIfError(paymentResult.error, "Payments could not be loaded");
-  throwIfError(expenseResult.error, "Expenses could not be loaded");
 
   return {
-    members: (memberResult.data as MemberRow[]).map(rowToMember),
-    payments: (paymentResult.data as PaymentRow[]).map(rowToPayment),
-    expenses: (expenseResult.data as ExpenseRow[]).map(rowToExpense),
+    members: memberRows.map(rowToMember),
+    payments: paymentRows.map(rowToPayment),
+    expenses: expenseRows.map(rowToExpense),
   };
 }
 
-async function seedSampleRegister() {
-  const client = requireSupabase();
-  const sampleEmailById = new Map(sampleMembers.map((member) => [member.id, member.email]));
-  const membersWithEmail = initialManagedMembers.map((member) => ({ ...member, email: sampleEmailById.get(member.id) ?? "" }));
-  const memberResult = await client.from("members").upsert(membersWithEmail.map(memberToRow), { onConflict: "id" });
-  throwIfError(memberResult.error, "Sample members could not be created");
-
-  const paymentResult = await client.from("payments").upsert(sampleTransactions.map((transaction) => paymentToRow({
-    ...transaction,
-    date: toIsoDate(transaction.date),
-  })), { onConflict: "id" });
-  throwIfError(paymentResult.error, "Sample payments could not be created");
-
-  const expenseResult = await client.from("expenses").upsert(initialExpenses.map(expenseToRow), { onConflict: "id" });
-  throwIfError(expenseResult.error, "Sample expenses could not be created");
+export async function loadCloudRegister(): Promise<CloudRegisterData> {
+  return readCloudRegister();
 }
 
-export async function loadCloudRegister(): Promise<CloudRegisterData> {
-  const data = await readCloudRegister();
-  if (data.members.length || data.payments.length || data.expenses.length) return data;
+export async function checkCloudReadAccess() {
+  const client = requireSupabase();
+  async function canReadTable(table: "members" | "payments" | "expenses") {
+    try {
+      const { error } = await client.from(table).select("id", { head: true }).limit(0);
+      return error === null;
+    } catch {
+      return false;
+    }
+  }
 
-  await seedSampleRegister();
-  return readCloudRegister();
+  const [membersRead, paymentsRead, expensesRead] = await Promise.all([
+    canReadTable("members"),
+    canReadTable("payments"),
+    canReadTable("expenses"),
+  ]);
+
+  return { membersRead, paymentsRead, expensesRead };
 }
 
 export async function createCloudMember(member: ManagedMember) {
@@ -200,14 +249,14 @@ export async function createCloudMember(member: ManagedMember) {
   throwIfError(error, "Member could not be saved");
 }
 
-export async function createCloudMembers(members: ManagedMember[], payments: MemberPayment[]) {
-  const client = requireSupabase();
-  const memberResult = await client.from("members").insert(members.map(memberToRow));
-  throwIfError(memberResult.error, "Year-wise members could not be saved");
-  if (payments.length) {
-    const paymentResult = await client.from("payments").insert(payments.map(paymentToRow));
-    throwIfError(paymentResult.error, "Entry payments could not be saved");
-  }
+export async function createCloudMembersWithInitialPayments(members: ManagedMember[], payments: MemberPayment[]) {
+  const { data, error } = await requireSupabase().rpc("create_yearwise_members_with_initial_payments", {
+    p_members: members.map(memberToRow),
+    p_payments: payments.map(paymentToRow),
+  });
+  throwIfError(error, "Unable to create members and initial payments. No changes were saved");
+
+  return data as { member_ids: string[]; payment_ids: string[] };
 }
 
 export async function updateCloudMember(member: ManagedMember) {
@@ -241,8 +290,14 @@ export async function createCloudPayment(payment: MemberPayment) {
 
 export async function syncCloudExpenses(expenses: ExpenseRecord[]) {
   const client = requireSupabase();
-  const activeResult = await client.from("expenses").select("id").is("archived_at", null);
-  throwIfError(activeResult.error, "Existing expenses could not be checked");
+  const activeRows = await loadAllRows<{ id: string }>(
+    (from, to) => client.from("expenses")
+      .select("id")
+      .is("archived_at", null)
+      .order("id")
+      .range(from, to),
+    "Existing expenses could not be checked",
+  );
 
   if (expenses.length) {
     const saveResult = await client.from("expenses").upsert(expenses.map(expenseToRow), { onConflict: "id" });
@@ -250,7 +305,7 @@ export async function syncCloudExpenses(expenses: ExpenseRecord[]) {
   }
 
   const nextIds = new Set(expenses.map((expense) => expense.id));
-  const removedIds = (activeResult.data ?? []).map((row) => row.id as string).filter((id) => !nextIds.has(id));
+  const removedIds = activeRows.map((row) => row.id).filter((id) => !nextIds.has(id));
   if (removedIds.length) {
     const archiveResult = await client.from("expenses")
       .update({ archived_at: new Date().toISOString() })

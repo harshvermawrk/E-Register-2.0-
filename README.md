@@ -64,18 +64,18 @@ The Vite frontend is written to `dist/`, and the bundled Electron main/preload s
 Generate the Windows NSIS installer:
 
 ```sh
-npm run package
+npm run dist
 ```
 
 The installer is written to:
 
 ```text
-release/E-Register-Dashboard-Setup-1.0.0.exe
+release/E-Register-Setup-1.0.0.exe
 ```
 
-Double-click the installer and follow its prompts. The installer provides a Desktop shortcut option, adds an E-Register Dashboard shortcut to the Start Menu, and offers to launch the application after installation. The installed app is launched from its shortcut like a normal Windows application.
+Double-click the installer and follow its prompts. The installer provides a Desktop shortcut option, adds an E-Register shortcut to the Start Menu, and offers to launch the application after installation. The installed app is launched from its shortcut like a normal Windows application.
 
-The configured Windows product name is **E-Register Dashboard**, with version **1.0.0**. Update `version` in `package.json` when preparing a new release.
+The configured Windows product name is **E-Register**, with version **1.0.0**. Update `version` in `package.json` when preparing a new release.
 
 ## Application icon
 
@@ -93,7 +93,7 @@ The test backend uses Supabase Auth and a managed PostgreSQL database. Supabase 
 ### Create the test project
 
 1. Create a free Supabase project and select the region you want for test data.
-2. Open **SQL Editor** in that project and run [`supabase/schema.sql`](supabase/schema.sql).
+2. Open **SQL Editor** in that project and run [`supabase/schema.sql`](supabase/schema.sql), then run the additive [year-wise atomic create migration](supabase/migrations/20261008_create_yearwise_members_with_initial_payments.sql). For an existing project, run only the migration; do not rerun the full bootstrap schema for this update.
 3. In **Authentication > Users**, create the one admin test account. Turn off public sign-ups in the project’s Auth settings.
 4. Add that account to the allowlist from SQL Editor, replacing the sample email with its exact sign-in email:
 
@@ -103,10 +103,11 @@ The test backend uses Supabase Auth and a managed PostgreSQL database. Supabase 
    on conflict (user_id) do nothing;
    ```
 
-5. Copy `.env.example` to `.env.local` and fill in the project URL and public anon/publishable key from **Project Settings > API**. `.env.local` is ignored by Git.
-6. Start the web app with `npm run web`, then sign in with the approved admin account.
+5. In **Authentication > URL Configuration > Redirect URLs**, allow the app URL used for sign-in and password recovery. For local development, add both `http://localhost:5173/?auth=reset-password` and `http://localhost:8443/?auth=reset-password`. For password recovery from the packaged desktop app, deploy the web app and add its `https://` callback URL with `/?auth=reset-password`.
+6. Copy `.env.example` to `.env.local` and fill in the project URL and public anon/publishable key from **Project Settings > API**. Set `VITE_SUPABASE_REDIRECT_URL` to the hosted app origin when enabling desktop password recovery. `.env.local` is ignored by Git.
+7. Start the web app with `npm run web`, then sign in with the approved admin account, or choose **Forgot password?** to receive a secure reset link. Supabase Auth handles password storage; the app never stores or displays plaintext password values.
 
-When the new test database is completely empty, the app seeds it with the project’s fictional sample members, payments, and expenses. Existing data is never overwritten by this sample seed. The header labels this as a cloud test workspace. Keep real member and financial data out of this free test project.
+The cloud register does not seed sample records automatically; an empty cloud project remains empty. Use local sample mode for fictional preview data. The header labels the authenticated database as a cloud test workspace. Keep real member and financial data out of this free test project.
 
 Supabase Free currently includes 500 MB of database storage, but pauses projects after a week of inactivity and does not include automatic database backups. Use it for development and sample data; decide on a paid, backed-up production setup before relying on it for live records. Check [current Supabase plan details](https://supabase.com/pricing) before making that later decision.
 

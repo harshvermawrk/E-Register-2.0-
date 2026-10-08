@@ -64,7 +64,7 @@ async function createMainWindow(): Promise<void> {
 
   const iconPath = path.join(app.getAppPath(), "assets", "icons", "icon.ico");
   const window = new BrowserWindow({
-    title: "E-Register Dashboard",
+    title: "E-Register",
     width: 1280,
     height: 800,
     minWidth: 980,
@@ -88,7 +88,7 @@ async function createMainWindow(): Promise<void> {
   });
   window.webContents.on("page-title-updated", (event) => {
     event.preventDefault();
-    window.setTitle("E-Register Dashboard");
+    window.setTitle("E-Register");
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {

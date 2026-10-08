@@ -5,6 +5,7 @@ release/
 build/
 .cache/
 .env*
+*.env
 !.env.example
 .vite/
 vite.config.*.timestamp-*

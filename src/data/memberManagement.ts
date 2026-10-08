@@ -1,4 +1,4 @@
-import { members, type Member, type MemberStatus } from "./mockData";
+import { members, type Member } from "./mockData";
 import { dateToFinancialYear, financialYears, parseRegisterDate, type MemberPayment } from "../services/registerService";
 
 export { financialYears };
@@ -103,10 +103,4 @@ export function createManagedMember(fields: MemberFields, sno: number, entryAmou
     lastPaymentDate: "—",
     email: "",
   };
-}
-
-export function statusTone(status: MemberStatus) {
-  if (status === "Active") return { color: "#047857", background: "#ECFDF5", dot: "#10B981" };
-  if (status === "Pending") return { color: "#B45309", background: "#FFFBEB", dot: "#F59E0B" };
-  return { color: "#475569", background: "#F1F5F9", dot: "#94A3B8" };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import TopNavbar from "./components/TopNavbar";
@@ -11,8 +11,97 @@ import { createManagedMember, formatCurrency, initialManagedMembers, type Manage
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { initialExpenses, loadExpenses, type ExpenseRecord } from "./services/expenseService";
 import { createPayment, financialYears, loadPayments, monthlyPaymentTotals, paymentTotals, savePayments, type MemberPayment, type PaymentFields } from "./services/registerService";
-import { archiveCloudMember, createCloudMember, createCloudMembers, createCloudPayment, loadCloudRegister, syncCloudExpenses, updateCloudMember } from "./services/cloudRegister";
-import { isSupabaseConfigured, requireSupabase, signInAdmin, signOutAdmin, verifyAdminAccess } from "./services/supabaseClient";
+import { archiveCloudMember, checkCloudReadAccess, createCloudMember, createCloudMembersWithInitialPayments, createCloudPayment, loadCloudRegister, syncCloudExpenses, updateCloudMember } from "./services/cloudRegister";
+import { isSupabaseConfigured, requestPasswordReset, requireSupabase, signInAdmin, signOutAdmin, updateAdminPassword, verifyAdminAccess } from "./services/supabaseClient";
+
+interface AuthDiagnosticStatus {
+  authenticated: boolean | null;
+  userPresent: boolean | null;
+  adminAuthorized: boolean | null;
+  membersRead: boolean | null;
+  paymentsRead: boolean | null;
+  expensesRead: boolean | null;
+}
+
+function DevAuthDiagnostics() {
+  const [status, setStatus] = useState<AuthDiagnosticStatus>({
+    authenticated: null,
+    userPresent: null,
+    adminAuthorized: null,
+    membersRead: null,
+    paymentsRead: null,
+    expensesRead: null,
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkStatus() {
+      let authenticated = false;
+      let userPresent = false;
+      let adminAuthorized = false;
+      let membersRead = false;
+      let paymentsRead = false;
+      let expensesRead = false;
+
+      try {
+        const { data, error } = await requireSupabase().auth.getSession();
+        if (!error) {
+          const session = data.session;
+          authenticated = Boolean(session);
+          userPresent = Boolean(session?.user?.id);
+
+          if (authenticated && userPresent) {
+            try {
+              adminAuthorized = await verifyAdminAccess();
+            } catch {
+              adminAuthorized = false;
+            }
+          }
+
+          if (adminAuthorized) {
+            const reads = await checkCloudReadAccess();
+            membersRead = reads.membersRead;
+            paymentsRead = reads.paymentsRead;
+            expensesRead = reads.expensesRead;
+          }
+        }
+      } catch {
+        // Diagnostics intentionally expose status only, never auth or database error details.
+      }
+
+      if (active) {
+        setStatus({ authenticated, userPresent, adminAuthorized, membersRead, paymentsRead, expensesRead });
+      }
+    }
+
+    void checkStatus();
+    return () => { active = false; };
+  }, []);
+
+  const rows: Array<[keyof AuthDiagnosticStatus, string]> = [
+    ["authenticated", "authenticated"],
+    ["userPresent", "userPresent"],
+    ["adminAuthorized", "adminAuthorized"],
+    ["membersRead", "membersRead"],
+    ["paymentsRead", "paymentsRead"],
+    ["expensesRead", "expensesRead"],
+  ];
+
+  return (
+    <aside aria-label="Development authentication diagnostics" className="fixed bottom-4 right-4 z-[100] w-72 rounded-xl border border-slate-200 bg-white/95 p-4 text-xs shadow-lg backdrop-blur">
+      <p className="mb-2 font-semibold text-slate-700">Development auth status</p>
+      <dl className="space-y-1 font-mono text-slate-600">
+        {rows.map(([key, label]) => (
+          <div key={key} className="flex justify-between gap-4">
+            <dt>{label}</dt>
+            <dd>{status[key] === null ? "checking" : String(status[key])}</dd>
+          </div>
+        ))}
+      </dl>
+    </aside>
+  );
+}
 
 function DashboardHome({ onNavigate, members, payments, expenses }: { onNavigate: (nav: string) => void; members: ManagedMember[]; payments: MemberPayment[]; expenses: ExpenseRecord[] }) {
   const [year, setYear] = useState<string>(financialYears[0]);
@@ -181,7 +270,7 @@ function DashboardApp({ cloudMode, adminEmail, onSignOut }: { cloudMode: boolean
         ? createPayment(result, { memberId: member.id, date: member.joinDate, amount: member.entryAmount, paymentMode: "Cash", status: "Paid", receiptId: `RCP-${member.id}`, description: "Member entry credit" })
         : result, payments);
     const addedPayments = nextPayments.slice(payments.length);
-    runChange(() => createCloudMembers(created, addedPayments), () => {
+    runChange(() => createCloudMembersWithInitialPayments(created, addedPayments), () => {
       setMembers((current) => [...current, ...created]);
       setPayments(nextPayments);
     });
@@ -203,7 +292,7 @@ function DashboardApp({ cloudMode, adminEmail, onSignOut }: { cloudMode: boolean
     runChange(() => archiveCloudMember(id), () => setMembers((current) => current.filter((member) => member.id !== id)));
   }
 
-  function runChange(saveToCloud: () => Promise<void>, applyChange: () => void) {
+  function runChange<T>(saveToCloud: () => Promise<T>, applyChange: () => void) {
     if (!cloudMode) {
       applyChange();
       return;
@@ -252,19 +341,78 @@ function DashboardApp({ cloudMode, adminEmail, onSignOut }: { cloudMode: boolean
 function AdminAppGate() {
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [adminEmail, setAdminEmail] = useState("");
+  const [authView, setAuthView] = useState<"login" | "forgot-password" | "reset-password">("login");
+  const recoverySession = useRef(false);
+
+  function returnToLogin() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("auth");
+    url.hash = window.desktop ? "/" : "";
+    window.history.replaceState(null, "", url);
+    recoverySession.current = false;
+    setAuthView("login");
+  }
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    function syncAuthViewFromUrl() {
+      const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+      const [hashRoute, ...hashParams] = hash.split("#");
+      const [routePath, routeQuery = ""] = hashRoute.split("?");
+      const route = routePath.replace(/^\//, "");
+      const params = new URLSearchParams([
+        window.location.search.slice(1),
+        routeQuery,
+        ...hashParams,
+        route.startsWith("access_token=") ? route : "",
+      ].filter(Boolean).join("&"));
+      const recoveryType = params.get("type");
+      const recoveryRoute =
+        route === "reset-password" ||
+        new URLSearchParams(window.location.search.slice(1)).get("auth") === "reset-password" ||
+        recoveryType === "recovery";
+      if (recoveryRoute) {
+        recoverySession.current = true;
+        setAuthView("reset-password");
+        return;
+      }
+      if (route === "forgot-password") {
+        setAuthView("forgot-password");
+        return;
+      }
+      setAuthView("login");
+    }
+
+    syncAuthViewFromUrl();
+    window.addEventListener("hashchange", syncAuthViewFromUrl);
+
+    if (!isSupabaseConfigured) return () => window.removeEventListener("hashchange", syncAuthViewFromUrl);
+
     let active = true;
+    let authStateChangedWhileLoading = false;
     const client = requireSupabase();
     const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT" && active) setAdminEmail("");
+      if (!active) return;
+      if (event === "PASSWORD_RECOVERY") {
+        authStateChangedWhileLoading = true;
+        recoverySession.current = true;
+        setAdminEmail("");
+        setAuthView("reset-password");
+      } else if (event === "SIGNED_OUT") {
+        authStateChangedWhileLoading = true;
+        recoverySession.current = false;
+        setAdminEmail("");
+      }
     });
     client.auth.getSession().then(async ({ data, error }) => {
       if (error) throw error;
       if (data.session?.user) {
+        if (authStateChangedWhileLoading) return;
+        if (recoverySession.current) {
+          if (active) setAuthView("reset-password");
+          return;
+        }
         await verifyAdminAccess();
-        if (active) setAdminEmail(data.session.user.email ?? "Admin");
+        if (active && !recoverySession.current) setAdminEmail(data.session.user.email ?? "Admin");
       }
     }).catch(async () => {
       await client.auth.signOut();
@@ -274,6 +422,7 @@ function AdminAppGate() {
     return () => {
       active = false;
       subscription.unsubscribe();
+      window.removeEventListener("hashchange", syncAuthViewFromUrl);
     };
   }, []);
 
@@ -281,15 +430,36 @@ function AdminAppGate() {
   if (authLoading) return <div className="flex min-h-screen items-center justify-center bg-slate-50"><span className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" aria-label="Checking admin session" /></div>;
 
   if (!adminEmail) {
-    return <AdminLoginPage onSignIn={async (email, password) => {
-      const user = await signInAdmin(email, password);
-      setAdminEmail(user.email ?? "Admin");
-    }} />;
+    return <AdminLoginPage
+      view={authView}
+      onForgotPassword={() => setAuthView("forgot-password")}
+      onBackToLogin={returnToLogin}
+      onSignIn={async (email, password) => {
+        const user = await signInAdmin(email, password);
+        setAdminEmail(user.email ?? "Admin");
+      }}
+      onRequestReset={async (email) => {
+        await requestPasswordReset(email);
+      }}
+      onResetPassword={async (password) => {
+        await updateAdminPassword(password);
+        await signOutAdmin();
+        returnToLogin();
+        setAdminEmail("");
+      }}
+    />;
   }
 
-  return <DashboardApp cloudMode adminEmail={adminEmail} onSignOut={() => {
-    void signOutAdmin().catch((error: unknown) => console.error("E-Register sign-out failed.", error)).finally(() => setAdminEmail(""));
-  }} />;
+  return (
+    <>
+      <DashboardApp cloudMode adminEmail={adminEmail} onSignOut={() => {
+        void signOutAdmin()
+          .then(() => setAdminEmail(""))
+          .catch(() => console.error("E-Register sign-out failed."));
+      }} />
+      {import.meta.env.DEV && <DevAuthDiagnostics />}
+    </>
+  );
 }
 
 export default function App() {
