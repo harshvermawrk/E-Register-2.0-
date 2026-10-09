@@ -6,7 +6,7 @@ import MemberFormModal from "./MemberFormModal";
 
 interface MembersListPageProps {
   members: ManagedMember[];
-  onCreate: (fields: MemberFields) => void;
+  onCreate: (fields: MemberFields) => void | Promise<void>;
   onUpdate: (id: string, fields: MemberFields) => void;
   onDelete: (id: string) => void;
 }
@@ -31,6 +31,7 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
   const [sortBy, setSortBy] = useState<SortField>("name");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedMember | null>(null);
+  const [saveError, setSaveError] = useState("");
 
   const filteredMembers = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -58,11 +59,16 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
     XLSX.writeFile(workbook, "member-register.xlsx");
   }
 
-  function saveMember(fields: MemberFields) {
-    if (editing) onUpdate(editing.id, fields);
-    else onCreate(fields);
-    setFormOpen(false);
-    setEditing(null);
+  async function saveMember(fields: MemberFields) {
+    setSaveError("");
+    try {
+      if (editing) onUpdate(editing.id, fields);
+      else await onCreate(fields);
+      setFormOpen(false);
+      setEditing(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Member could not be saved. Please try again.");
+    }
   }
 
   function deleteMember(member: ManagedMember) {
@@ -73,8 +79,8 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-5 py-7 sm:px-8 lg:px-10">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-400"><span>Directory</span><span>/</span><span className="text-blue-600">Members</span></div>
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Member management</h2>
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-400"><span>Directory</span><span>/</span><span className="text-blue-600">Member List</span></div>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Member List</h2>
           <p className="mt-2 max-w-xl text-sm text-slate-500">Keep your community organized and every member account within reach.</p>
         </div>
         <button onClick={() => { setEditing(null); setFormOpen(true); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
@@ -82,7 +88,9 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
         </button>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+      {saveError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{saveError}</p>}
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(62,39,35,0.055)]">
         <div className="grid min-w-0 gap-4 border-b border-slate-100 p-5 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,2fr)] lg:items-center">
           <div className="min-w-0"><h3 className="font-display text-base font-semibold text-slate-900">All members <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 font-sans text-xs font-semibold text-slate-500">{filteredMembers.length}</span></h3><p className="mt-1 text-xs text-slate-400">Search and manage your member register</p></div>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,145px)_auto] sm:items-center lg:grid-cols-[minmax(0,1fr)_200px_auto]">
@@ -117,7 +125,7 @@ export default function MembersListPage({ members, onCreate, onUpdate, onDelete 
         <div className="flex items-center justify-between border-t border-slate-100 px-6 py-3.5 text-xs text-slate-400"><span>Showing <span className="font-semibold text-slate-600">{filteredMembers.length}</span> of <span className="font-semibold text-slate-600">{members.length}</span> members</span><span className="hidden items-center gap-1 text-slate-400 sm:flex">Select a row to view the passbook <span className="text-blue-500"><Icon kind="arrow" /></span></span></div>
       </section>
 
-      {formOpen && <MemberFormModal member={editing} onClose={() => { setFormOpen(false); setEditing(null); }} onSave={saveMember} />}
+      {formOpen && <MemberFormModal member={editing} saveError={saveError} onClose={() => { setFormOpen(false); setEditing(null); setSaveError(""); }} onSave={saveMember} />}
     </div>
   );
 }

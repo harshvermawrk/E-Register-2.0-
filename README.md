@@ -16,8 +16,10 @@ The project contains a React + TypeScript frontend and an Electron desktop shell
 
 - Dashboard with shortcuts to application sections
 - Member list and member profile management
-- Year Wise List for browsing and adding year-based member entries
-- Expenses & Collection page with yearly summaries, period filtering, search, and expense editing
+- Batwaara notebook for direct, keyboard-first yearly collection entry, with one configurable amount per year and name search
+- Separate member collections register for recording and reviewing payments, with financial-year, status, and search filters
+- Expense register with direct, keyboard-first period entry, yearly totals, and period ledgers for adding, editing, deleting, and exporting expenses
+- Cloud member creation that avoids reusing IDs and account numbers from archived members
 - Responsive React interface shared between the desktop app and web development preview
 
 ## Requirements
@@ -93,7 +95,7 @@ The test backend uses Supabase Auth and a managed PostgreSQL database. Supabase 
 ### Create the test project
 
 1. Create a free Supabase project and select the region you want for test data.
-2. Open **SQL Editor** in that project and run [`supabase/schema.sql`](supabase/schema.sql), then run the additive [year-wise atomic create migration](supabase/migrations/20261008_create_yearwise_members_with_initial_payments.sql). For an existing project, run only the migration; do not rerun the full bootstrap schema for this update.
+2. Open **SQL Editor** in that project and run [`supabase/schema.sql`](supabase/schema.sql), then run the additive [year-wise atomic create migration](supabase/migrations/20261008_create_yearwise_members_with_initial_payments.sql), [Batwaara register migration](supabase/migrations/20261008120000_create_batwaara_entries.sql), and [Batwaara yearly amount settings migration](supabase/migrations/20261009120000_create_batwaara_year_settings.sql). For an existing project, run only the migrations; do not rerun the full bootstrap schema.
 3. In **Authentication > Users**, create the one admin test account. Turn off public sign-ups in the project’s Auth settings.
 4. Add that account to the allowlist from SQL Editor, replacing the sample email with its exact sign-in email:
 

@@ -3,114 +3,27 @@ import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation, useNav
 import Sidebar from "./components/Sidebar";
 import TopNavbar from "./components/TopNavbar";
 import ExpenseCollectionPage from "./components/expenses/ExpenseCollectionPage";
+import ExpensePeriodPage from "./components/expenses/ExpensePeriodPage";
+import MemberCollectionsPage from "./components/MemberCollectionsPage";
 import AdminLoginPage from "./components/AdminLoginPage";
 import MemberProfilePage from "./components/MemberProfilePage";
 import MembersListPage from "./components/MembersListPage";
 import YearWiseListPage from "./components/YearWiseListPage";
-import { createManagedMember, formatCurrency, initialManagedMembers, type ManagedMember, type MemberFields, type YearWiseEntryFields } from "./data/memberManagement";
+import { createManagedMember, formatCurrency, initialManagedMembers, type ManagedMember, type MemberFields } from "./data/memberManagement";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { initialExpenses, loadExpenses, type ExpenseRecord } from "./services/expenseService";
 import { createPayment, financialYears, loadPayments, monthlyPaymentTotals, paymentTotals, savePayments, type MemberPayment, type PaymentFields } from "./services/registerService";
-import { archiveCloudMember, checkCloudReadAccess, createCloudMember, createCloudMembersWithInitialPayments, createCloudPayment, loadCloudRegister, syncCloudExpenses, updateCloudMember } from "./services/cloudRegister";
+import { archiveCloudMember, createCloudMember, createCloudPayment, loadCloudRegister, saveCloudBatwaaraEntry, syncCloudExpenses, updateCloudMember } from "./services/cloudRegister";
+import { saveLocalBatwaaraEntry, type BatwaaraEntry } from "./services/batwaaraService";
 import { isSupabaseConfigured, requestPasswordReset, requireSupabase, signInAdmin, signOutAdmin, updateAdminPassword, verifyAdminAccess } from "./services/supabaseClient";
-
-interface AuthDiagnosticStatus {
-  authenticated: boolean | null;
-  userPresent: boolean | null;
-  adminAuthorized: boolean | null;
-  membersRead: boolean | null;
-  paymentsRead: boolean | null;
-  expensesRead: boolean | null;
-}
-
-function DevAuthDiagnostics() {
-  const [status, setStatus] = useState<AuthDiagnosticStatus>({
-    authenticated: null,
-    userPresent: null,
-    adminAuthorized: null,
-    membersRead: null,
-    paymentsRead: null,
-    expensesRead: null,
-  });
-
-  useEffect(() => {
-    let active = true;
-
-    async function checkStatus() {
-      let authenticated = false;
-      let userPresent = false;
-      let adminAuthorized = false;
-      let membersRead = false;
-      let paymentsRead = false;
-      let expensesRead = false;
-
-      try {
-        const { data, error } = await requireSupabase().auth.getSession();
-        if (!error) {
-          const session = data.session;
-          authenticated = Boolean(session);
-          userPresent = Boolean(session?.user?.id);
-
-          if (authenticated && userPresent) {
-            try {
-              adminAuthorized = await verifyAdminAccess();
-            } catch {
-              adminAuthorized = false;
-            }
-          }
-
-          if (adminAuthorized) {
-            const reads = await checkCloudReadAccess();
-            membersRead = reads.membersRead;
-            paymentsRead = reads.paymentsRead;
-            expensesRead = reads.expensesRead;
-          }
-        }
-      } catch {
-        // Diagnostics intentionally expose status only, never auth or database error details.
-      }
-
-      if (active) {
-        setStatus({ authenticated, userPresent, adminAuthorized, membersRead, paymentsRead, expensesRead });
-      }
-    }
-
-    void checkStatus();
-    return () => { active = false; };
-  }, []);
-
-  const rows: Array<[keyof AuthDiagnosticStatus, string]> = [
-    ["authenticated", "authenticated"],
-    ["userPresent", "userPresent"],
-    ["adminAuthorized", "adminAuthorized"],
-    ["membersRead", "membersRead"],
-    ["paymentsRead", "paymentsRead"],
-    ["expensesRead", "expensesRead"],
-  ];
-
-  return (
-    <aside aria-label="Development authentication diagnostics" className="fixed bottom-4 right-4 z-[100] w-72 rounded-xl border border-slate-200 bg-white/95 p-4 text-xs shadow-lg backdrop-blur">
-      <p className="mb-2 font-semibold text-slate-700">Development auth status</p>
-      <dl className="space-y-1 font-mono text-slate-600">
-        {rows.map(([key, label]) => (
-          <div key={key} className="flex justify-between gap-4">
-            <dt>{label}</dt>
-            <dd>{status[key] === null ? "checking" : String(status[key])}</dd>
-          </div>
-        ))}
-      </dl>
-    </aside>
-  );
-}
 
 function DashboardHome({ onNavigate, members, payments, expenses }: { onNavigate: (nav: string) => void; members: ManagedMember[]; payments: MemberPayment[]; expenses: ExpenseRecord[] }) {
   const [year, setYear] = useState<string>(financialYears[0]);
   const totals = paymentTotals(payments, year);
   const expenseTotal = expenses.filter((expense) => expense.year === Number(year.slice(0, 4)) && (expense.status ?? "Paid") === "Paid").reduce((sum, expense) => sum + expense.amount, 0);
   const chartData = monthlyPaymentTotals(payments, year);
-  const activeMembers = members.filter((member) => member.status === "Active").length;
   const cards = [
-    { label: "Members", value: members.length.toLocaleString("en-IN"), note: `${activeMembers} active · ${members.filter((member) => member.status === "Pending").length} pending` },
+    { label: "Members", value: members.length.toLocaleString("en-IN"), note: "Registered member records" },
     { label: "Collections received", value: formatCurrency(totals.collected), note: `Paid member receipts · FY ${year.replace("-", "–")}` },
     { label: "Pending collections", value: formatCurrency(totals.pending), note: "Awaiting payment status update" },
     { label: "Net finance balance", value: formatCurrency(totals.collected - expenseTotal), note: `${formatCurrency(expenseTotal)} paid expenses this year` },
@@ -120,15 +33,16 @@ function DashboardHome({ onNavigate, members, payments, expenses }: { onNavigate
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.15em] text-blue-600">Workspace</p>
         <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Welcome to E-Register</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Choose a workspace to manage your member register, review yearly entries, or keep track of society expenses and collections.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Choose a workspace to manage your member register, review Batwaara entries, or keep track of society expenses and collections.</p>
       </header>
-      <section aria-label="Quick access" className="grid gap-4 md:grid-cols-3">
+      <section aria-label="Quick access" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { id: "members", title: "Members", description: "Manage member details and passbooks.", icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" },
-          { id: "year-wise-list", title: "Year Wise List", description: "Browse and add member entries by year.", icon: "M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z" },
-          { id: "expenses-collection", title: "Expenses & Collection", description: "Review yearly collections and period expenses.", icon: "M12 2v20m5-16H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" },
+          { id: "members", title: "Member List", description: "Manage member details and passbooks.", icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" },
+          { id: "year-wise-list", title: "Batwaara", description: "Browse and add member entries by year.", icon: "M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z" },
+          { id: "collections", title: "Collections", description: "Record and review member payments and receipts.", icon: "M4 7h16M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm3 8h6m-6 4h8" },
+          { id: "expenses-collection", title: "Expenses", description: "Review yearly expense totals and manage each period ledger.", icon: "M12 2v20m5-16H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" },
         ].map((item) => (
-          <button key={item.id} type="button" onClick={() => onNavigate(item.id)} className="group rounded-2xl border border-slate-200/80 bg-white p-5 text-left shadow-[0_2px_8px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus-ring sm:p-6">
+          <button key={item.id} type="button" onClick={() => onNavigate(item.id)} className="group rounded-2xl border border-slate-200/80 bg-white p-5 text-left shadow-[0_2px_8px_rgba(62,39,35,0.045)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus-ring sm:p-6">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={item.icon} /></svg>
             </span>
@@ -139,12 +53,12 @@ function DashboardHome({ onNavigate, members, payments, expenses }: { onNavigate
         ))}
       </section>
       <section aria-label="Dashboard summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => <article key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.035)]"><p className="text-sm font-medium text-slate-500">{card.label}</p><p className="mt-2 font-display text-2xl font-semibold text-slate-900">{card.value}</p><p className="mt-2 text-xs text-slate-400">{card.note}</p></article>)}
+        {cards.map((card) => <article key={card.label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(62,39,35,0.045)]"><p className="text-sm font-medium text-slate-500">{card.label}</p><p className="mt-2 font-display text-2xl font-semibold text-slate-900">{card.value}</p><p className="mt-2 text-xs text-slate-400">{card.note}</p></article>)}
       </section>
-      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.035)] sm:p-6">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_2px_8px_rgba(62,39,35,0.045)] sm:p-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="font-display text-base font-semibold text-slate-900">Collection trend</h3><p className="mt-1 text-sm text-slate-500">Paid member receipts recorded in each month.</p></div><label className="text-xs font-semibold text-slate-500">Financial year<select value={year} onChange={(event) => setYear(event.target.value)} className="form-control mt-1 min-w-[150px]">{financialYears.map((item) => <option key={item} value={item}>FY {item.replace("-", "–")}</option>)}</select></label></div>
-        {payments.some((payment) => payment.status === "Paid" && paymentTotals(payments, year).collected > 0) ? <ResponsiveContainer width="100%" height={260}><AreaChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}><defs><linearGradient id="dashboardCollection" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563EB" stopOpacity={0.24} /><stop offset="100%" stopColor="#2563EB" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={{ stroke: "#E2E8F0" }} tickLine={false} /><YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={56} /><Tooltip formatter={(value) => formatCurrency(Number(value ?? 0))} /><Area type="monotone" dataKey="amount" name="Paid collections" stroke="#2563EB" fill="url(#dashboardCollection)" strokeWidth={2} /></AreaChart></ResponsiveContainer> : <div className="rounded-xl bg-slate-50 px-5 py-12 text-center text-sm text-slate-500">No paid collections recorded for FY {year.replace("-", "–")} yet.</div>}
-        <p className="mt-3 text-xs text-slate-400">Demo register · summaries and chart use the member and payment records shown in this app.</p>
+        {payments.some((payment) => payment.status === "Paid" && paymentTotals(payments, year).collected > 0) ? <ResponsiveContainer width="100%" height={260}><AreaChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}><defs><linearGradient id="dashboardCollection" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-saffron)" stopOpacity={0.24} /><stop offset="100%" stopColor="var(--color-saffron)" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="var(--color-warm-border)" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-muted-brown)" }} axisLine={{ stroke: "var(--color-warm-border)" }} tickLine={false} /><YAxis tick={{ fontSize: 11, fill: "var(--color-muted-brown)" }} axisLine={false} tickLine={false} width={56} /><Tooltip formatter={(value) => formatCurrency(Number(value ?? 0))} /><Area type="monotone" dataKey="amount" name="Paid collections" stroke="var(--color-deep-saffron)" fill="url(#dashboardCollection)" strokeWidth={2} /></AreaChart></ResponsiveContainer> : <div className="rounded-xl bg-slate-50 px-5 py-12 text-center text-sm text-slate-500">No paid collections recorded for FY {year.replace("-", "–")} yet.</div>}
+        <p className="mt-3 text-xs text-slate-400">Chart values reflect paid member collection records in the selected financial year.</p>
       </section>
     </div>
   );
@@ -242,43 +156,43 @@ function DashboardApp({ cloudMode, adminEmail, onSignOut }: { cloudMode: boolean
     : undefined;
   const pageTitle = selectedMember ? `${selectedMember.name} · Profile` : ({
     dashboard: "Dashboard",
-    members: "Members",
-    "year-wise-list": "Year Wise List",
-    "expenses-collection": "Expenses & Collection",
+    members: "Member List",
+    "year-wise-list": "Batwaara",
+    collections: "Collections",
+    "expenses-collection": "Expenses",
   } as Record<string, string>)[activeNav] ?? "Dashboard";
 
   function navigateTo(nav: string) {
     navigate(nav === "members" ? "/members" : `/${nav}`);
   }
 
-  function createMember(fields: MemberFields) {
+  async function createMember(fields: MemberFields) {
     const sno = Math.max(0, ...members.map((member) => member.sno)) + 1;
     const member = createManagedMember(fields, sno);
-    runChange(() => createCloudMember(member), () => setMembers((current) => [...current, member]));
+    if (cloudMode) {
+      const savedMember = await createCloudMember(member);
+      setMembers((current) => [...current, savedMember]);
+      return;
+    }
+    setMembers((current) => [...current, member]);
   }
 
-  function createMembers(entries: YearWiseEntryFields[]) {
-    const firstSno = Math.max(0, ...members.map((member) => member.sno)) + 1;
-    const created = entries.map((entry, index) => createManagedMember({
-        name: entry.name,
-        hometown: "",
-        phone: "",
-        joinDate: entry.joinDate,
-        status: "Active",
-      }, firstSno + index, entry.amount));
-    const nextPayments = created.reduce((result, member) => member.entryAmount && member.entryAmount > 0
-        ? createPayment(result, { memberId: member.id, date: member.joinDate, amount: member.entryAmount, paymentMode: "Cash", status: "Paid", receiptId: `RCP-${member.id}`, description: "Member entry credit" })
-        : result, payments);
-    const addedPayments = nextPayments.slice(payments.length);
-    runChange(() => createCloudMembersWithInitialPayments(created, addedPayments), () => {
-      setMembers((current) => [...current, ...created]);
-      setPayments(nextPayments);
-    });
+  async function saveBatwaaraEntry(entry: BatwaaraEntry) {
+    if (cloudMode) {
+      await saveCloudBatwaaraEntry(entry);
+      return;
+    }
+    saveLocalBatwaaraEntry(entry);
   }
 
-  function recordPayment(fields: PaymentFields) {
-    const payment = createPayment([], fields)[0];
-    runChange(() => createCloudPayment(payment), () => setPayments((current) => [...current, payment]));
+  async function createMemberPayment(fields: PaymentFields) {
+    if (cloudMode) {
+      const payment = createPayment([], fields)[0];
+      await createCloudPayment(payment);
+      setPayments((current) => [...current, payment]);
+      return;
+    }
+    setPayments((current) => createPayment(current, fields));
   }
 
   function updateMember(id: string, fields: MemberFields) {
@@ -308,7 +222,7 @@ function DashboardApp({ cloudMode, adminEmail, onSignOut }: { cloudMode: boolean
   }
 
   if (cloudMode && dataLoadError) {
-    return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-10"><section className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wider text-blue-600">E-Register test workspace</p><h1 className="mt-2 text-xl font-semibold text-slate-900">Couldn’t load the cloud register</h1><p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm leading-6 text-rose-700">{dataLoadError}</p><div className="mt-5 flex gap-3"><button type="button" onClick={() => setLoadRevision((revision) => revision + 1)} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">Try again</button><button type="button" onClick={onSignOut} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Sign out</button></div></section></main>;
+    return <main className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-10"><section className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><p className="font-display text-sm font-semibold tracking-wide text-deep-red">Shree Ranjeet Kuvar Baba · E-Register</p><h1 className="mt-2 text-xl font-semibold text-slate-900">Couldn’t load the cloud register</h1><p role="alert" className="mt-3 rounded-xl bg-rose-50 p-3 text-sm leading-6 text-rose-700">{dataLoadError}</p><div className="mt-5 flex gap-3"><button type="button" onClick={() => setLoadRevision((revision) => revision + 1)} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">Try again</button><button type="button" onClick={onSignOut} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Sign out</button></div></section></main>;
   }
 
   return (
@@ -325,10 +239,12 @@ function DashboardApp({ cloudMode, adminEmail, onSignOut }: { cloudMode: boolean
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/members" element={<MembersListPage members={members} onCreate={createMember} onUpdate={updateMember} onDelete={deleteMember} />} />
               <Route path="/members/:memberId" element={<MemberProfilePage members={members} payments={payments} onUpdate={updateMember} onDelete={deleteMember} />} />
-              <Route path="/year-wise-list" element={<YearWiseListPage members={members} payments={payments} onCreate={createMembers} />} />
+              <Route path="/year-wise-list" element={<YearWiseListPage members={members} payments={payments} cloudMode={cloudMode} onSave={saveBatwaaraEntry} />} />
               <Route path="/member/:memberId" element={<MemberProfilePage members={members} payments={payments} onUpdate={updateMember} onDelete={deleteMember} backToYearWise />} />
               <Route path="/dashboard" element={<DashboardHome onNavigate={navigateTo} members={members} payments={payments} expenses={expenses} />} />
-              <Route path="/expenses-collection" element={<ExpenseCollectionPage members={members} payments={payments} onCreatePayment={recordPayment} onExpensesChange={updateExpenses} savedExpenses={expenses} cloudMode={cloudMode} onSaveCloudExpenses={persistCloudExpenses} />} />
+              <Route path="/collections" element={<MemberCollectionsPage members={members} payments={payments} cloudMode={cloudMode} onCreatePayment={createMemberPayment} />} />
+              <Route path="/expenses-collection" element={<ExpenseCollectionPage savedExpenses={expenses} />} />
+              <Route path="/expenses-collection/:year/:periodId" element={<ExpensePeriodPage savedExpenses={expenses} cloudMode={cloudMode} onExpensesChange={updateExpenses} onSaveCloudExpenses={persistCloudExpenses} />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </div>
@@ -450,16 +366,11 @@ function AdminAppGate() {
     />;
   }
 
-  return (
-    <>
-      <DashboardApp cloudMode adminEmail={adminEmail} onSignOut={() => {
-        void signOutAdmin()
-          .then(() => setAdminEmail(""))
-          .catch(() => console.error("E-Register sign-out failed."));
-      }} />
-      {import.meta.env.DEV && <DevAuthDiagnostics />}
-    </>
-  );
+  return <DashboardApp cloudMode adminEmail={adminEmail} onSignOut={() => {
+    void signOutAdmin()
+      .then(() => setAdminEmail(""))
+      .catch(() => console.error("E-Register sign-out failed."));
+  }} />;
 }
 
 export default function App() {

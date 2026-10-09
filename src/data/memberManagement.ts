@@ -15,7 +15,8 @@ export const initialManagedMembers: ManagedMember[] = members.map((member) => ({
 }));
 
 export function formatCurrency(amount: number) {
-  return `₹${amount.toLocaleString("en-IN")}`;
+  const formatted = Math.abs(amount).toLocaleString("en-IN");
+  return amount < 0 ? `-₹${formatted}` : `₹${formatted}`;
 }
 
 function parseMemberDate(value: string) {

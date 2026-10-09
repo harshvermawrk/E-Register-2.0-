@@ -20,7 +20,7 @@ const navItems = [
   },
   {
     id: "members",
-    label: "Members",
+    label: "Member",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -32,7 +32,7 @@ const navItems = [
   },
   {
     id: "year-wise-list",
-    label: "Year Wise List",
+    label: "Batwaara",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="5" width="18" height="16" rx="2" />
@@ -43,10 +43,20 @@ const navItems = [
   },
   {
     id: "expenses-collection",
-    label: "Expenses & Collection",
+    label: "Expenses",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 2v20m5-16H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      </svg>
+    ),
+  },
+  {
+    id: "collections",
+    label: "Collections",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h8M8 12h5M8 16h8" />
       </svg>
     ),
   },
@@ -58,14 +68,15 @@ export default function Sidebar({ activeNav, onNavChange, collapsed, onToggle }:
       className="relative flex flex-col h-full transition-all duration-300 ease-in-out shrink-0"
       style={{
         width: collapsed ? "72px" : "240px",
-        backgroundColor: "#0F172A",
+        backgroundColor: "var(--color-warm-white)",
+        borderRight: "1px solid var(--color-warm-border)",
       }}
     >
       {/* Toggle button */}
       <button
         onClick={onToggle}
         className="absolute -right-3 top-[84px] z-10 w-6 h-6 rounded-full flex items-center justify-center border border-gray-200 bg-white shadow-sm hover:bg-gray-50 transition-colors focus-ring"
-        style={{ color: "#0F172A" }}
+        style={{ color: "var(--color-dark-brown)" }}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         aria-expanded={!collapsed}
       >
@@ -86,8 +97,8 @@ export default function Sidebar({ activeNav, onNavChange, collapsed, onToggle }:
       </button>
 
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b" style={{ borderColor: "rgba(255,255,255,0.08)", height: "72px" }}>
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#2563EB" }}>
+      <div className="flex items-center gap-3 px-5 py-5 border-b" style={{ borderColor: "rgba(212,160,23,0.4)", height: "72px" }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--color-deep-red)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
             <circle cx="9" cy="7" r="4" />
@@ -96,15 +107,16 @@ export default function Sidebar({ activeNav, onNavChange, collapsed, onToggle }:
           </svg>
         </div>
         {!collapsed && (
-          <span className="text-white font-semibold text-base tracking-tight" style={{ fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
-            E-Register
-          </span>
+          <div className="min-w-0 leading-tight">
+            <span className="block truncate font-display text-[10px] font-semibold tracking-wide text-deep-red">Shree Ranjeet Kuvar Baba</span>
+            <span className="mt-0.5 block text-sm font-semibold tracking-tight text-dark-brown">E-Register</span>
+          </div>
         )}
       </div>
 
       {/* Nav label */}
       {!collapsed && (
-        <p className="px-5 pt-6 pb-2 text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(148,163,184,0.6)" }}>
+        <p className="px-5 pt-6 pb-2 text-xs font-medium uppercase tracking-widest" style={{ color: "var(--color-muted-brown)" }}>
           Main Menu
         </p>
       )}
@@ -121,11 +133,11 @@ export default function Sidebar({ activeNav, onNavChange, collapsed, onToggle }:
               title={collapsed ? item.label : undefined}
               className="nav-item focus-ring w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-left"
               style={{
-                backgroundColor: isActive ? "#2563EB" : "transparent",
-                color: isActive ? "#ffffff" : "rgba(148,163,184,0.9)",
+                backgroundColor: isActive ? "var(--color-saffron)" : "transparent",
+                color: isActive ? "var(--color-dark-brown)" : "var(--color-muted-brown)",
               }}
               onMouseEnter={(e) => {
-                if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(255,255,255,0.06)";
+                if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(232,117,26,0.08)";
               }}
               onMouseLeave={(e) => {
                 if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent";
@@ -134,7 +146,7 @@ export default function Sidebar({ activeNav, onNavChange, collapsed, onToggle }:
               <span className="shrink-0">{item.icon}</span>
               {!collapsed && <span style={{ whiteSpace: "nowrap" }}>{item.label}</span>}
               {isActive && !collapsed && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white opacity-70" />
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400" />
               )}
             </button>
           );

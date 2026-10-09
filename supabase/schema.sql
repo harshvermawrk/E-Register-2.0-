@@ -37,6 +37,23 @@ create table if not exists public.payments (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.batwaara_entries (
+  id text primary key,
+  register_year integer not null check (register_year between 2000 and 2200),
+  member_id text references public.members(id) on delete set null,
+  person_name text not null check (length(trim(person_name)) > 0),
+  amount numeric(12, 2) check (amount is null or amount >= 0),
+  given boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.batwaara_year_settings (
+  register_year integer primary key check (register_year between 2000 and 2200),
+  amount numeric(12, 2) not null check (amount >= 0),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.expenses (
   id text primary key,
   financial_year_start integer not null check (financial_year_start between 2000 and 2200),
@@ -55,6 +72,7 @@ create table if not exists public.expenses (
 
 create index if not exists payments_member_date_idx on public.payments (member_id, payment_date desc);
 create index if not exists payments_date_status_idx on public.payments (payment_date, status);
+create index if not exists batwaara_entries_year_created_idx on public.batwaara_entries (register_year, created_at, id);
 create index if not exists expenses_year_date_idx on public.expenses (financial_year_start, expense_date desc);
 create unique index if not exists members_active_sno_idx on public.members (sno) where archived_at is null;
 create unique index if not exists members_active_account_number_idx on public.members (account_number) where archived_at is null;
@@ -76,6 +94,14 @@ for each row execute function public.set_updated_at();
 
 drop trigger if exists payments_set_updated_at on public.payments;
 create trigger payments_set_updated_at before update on public.payments
+for each row execute function public.set_updated_at();
+
+drop trigger if exists batwaara_entries_set_updated_at on public.batwaara_entries;
+create trigger batwaara_entries_set_updated_at before update on public.batwaara_entries
+for each row execute function public.set_updated_at();
+
+drop trigger if exists batwaara_year_settings_set_updated_at on public.batwaara_year_settings;
+create trigger batwaara_year_settings_set_updated_at before update on public.batwaara_year_settings
 for each row execute function public.set_updated_at();
 
 drop trigger if exists expenses_set_updated_at on public.expenses;
@@ -104,10 +130,12 @@ grant execute on function public.is_e_register_admin() to authenticated;
 alter table public.admin_users enable row level security;
 alter table public.members enable row level security;
 alter table public.payments enable row level security;
+alter table public.batwaara_entries enable row level security;
+alter table public.batwaara_year_settings enable row level security;
 alter table public.expenses enable row level security;
 
 revoke all on table public.admin_users from anon, authenticated;
-grant select, insert, update on table public.members, public.payments, public.expenses to authenticated;
+grant select, insert, update on table public.members, public.payments, public.batwaara_entries, public.batwaara_year_settings, public.expenses to authenticated;
 
 drop policy if exists "E-Register admin can read admin list" on public.admin_users;
 create policy "E-Register admin can read admin list"
@@ -123,6 +151,18 @@ with check ((select public.is_e_register_admin()));
 drop policy if exists "E-Register admin manages payments" on public.payments;
 create policy "E-Register admin manages payments"
 on public.payments for all to authenticated
+using ((select public.is_e_register_admin()))
+with check ((select public.is_e_register_admin()));
+
+drop policy if exists "E-Register admin manages Batwaara entries" on public.batwaara_entries;
+create policy "E-Register admin manages Batwaara entries"
+on public.batwaara_entries for all to authenticated
+using ((select public.is_e_register_admin()))
+with check ((select public.is_e_register_admin()));
+
+drop policy if exists "E-Register admin manages Batwaara yearly amounts" on public.batwaara_year_settings;
+create policy "E-Register admin manages Batwaara yearly amounts"
+on public.batwaara_year_settings for all to authenticated
 using ((select public.is_e_register_admin()))
 with check ((select public.is_e_register_admin()));
 

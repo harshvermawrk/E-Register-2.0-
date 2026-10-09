@@ -5,6 +5,7 @@ import { dateToFinancialYear, financialYearForStartYear } from "../../services/r
 interface ExpenseFormModalProps {
   year: number;
   periods: ExpensePeriod[];
+  initialPeriodId?: string;
   expense?: ExpenseRecord;
   onClose: () => void;
   onSave: (fields: ExpenseFields) => void;
@@ -27,17 +28,21 @@ function isValidDate(value: string): boolean {
     && date.getDate() === Number(day);
 }
 
-function getPeriodStartDate(year: number, periodId: string, periods: ExpensePeriod[]): string {
-  const periodIndex = periods.findIndex((period) => period.id === periodId);
-  const starts = [`${year}-04-01`, `${year}-07-01`, `${year}-10-01`, `${year + 1}-01-01`];
-  return starts[periodIndex] ?? `${year}-04-01`;
+function getPeriodStartDate(year: number, periodId: string): string {
+  const starts: Record<string, string> = {
+    "period-1": `${year}-04-01`,
+    "period-2": `${year}-07-01`,
+    "period-3": `${year}-10-01`,
+    "period-4": `${year + 1}-01-01`,
+  };
+  return starts[periodId] ?? `${year}-04-01`;
 }
 
-export default function ExpenseFormModal({ year, periods, expense, onClose, onSave }: ExpenseFormModalProps) {
+export default function ExpenseFormModal({ year, periods, initialPeriodId, expense, onClose, onSave }: ExpenseFormModalProps) {
   const [title, setTitle] = useState(expense?.title ?? "");
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
-  const [periodId, setPeriodId] = useState(expense?.periodId ?? periods[0]?.id ?? "");
-  const [date, setDate] = useState(expense?.date ?? getPeriodStartDate(year, periods[0]?.id ?? "", periods));
+  const [periodId, setPeriodId] = useState(expense?.periodId ?? initialPeriodId ?? periods[0]?.id ?? "");
+  const [date, setDate] = useState(expense?.date ?? getPeriodStartDate(year, initialPeriodId ?? periods[0]?.id ?? ""));
   const [dateTouched, setDateTouched] = useState(false);
   const [notes, setNotes] = useState(expense?.notes ?? "");
   const [errors, setErrors] = useState<FormErrors>({});
@@ -100,7 +105,7 @@ export default function ExpenseFormModal({ year, periods, expense, onClose, onSa
             <span className="mb-1.5 block text-sm font-medium text-slate-700">Amount</span>
             <div className="relative">
               <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₹</span>
-              <input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} aria-invalid={Boolean(errors.amount)} aria-describedby={errors.amount ? "expense-amount-error" : undefined} className={`${fieldClass} pl-8`} placeholder="0.00" />
+              <input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} aria-invalid={Boolean(errors.amount)} aria-describedby={errors.amount ? "expense-amount-error" : undefined} className={fieldClass} style={{ paddingLeft: "2rem" }} placeholder="0.00" />
             </div>
             {errors.amount && <span id="expense-amount-error" className="mt-1 block text-xs text-rose-600">{errors.amount}</span>}
           </label>
@@ -116,7 +121,7 @@ export default function ExpenseFormModal({ year, periods, expense, onClose, onSa
             <select value={periodId} onChange={(event) => {
               const value = event.target.value;
               setPeriodId(value);
-              if (!expense && !dateTouched) setDate(getPeriodStartDate(year, value, periods));
+              if (!expense && !dateTouched) setDate(getPeriodStartDate(year, value));
             }} aria-invalid={Boolean(errors.periodId)} aria-describedby={errors.periodId ? "expense-period-error" : undefined} className={fieldClass}>
               <option value="">Select a period</option>
               {periods.map((period) => <option key={period.id} value={period.id}>{period.name} · {period.dateRange}</option>)}

@@ -25,9 +25,7 @@ export interface ExpenseRecord {
 export type ExpenseFields = Omit<ExpenseRecord, "id">;
 
 export interface ExpenseSummary {
-  totalCollection: number;
   totalExpense: number;
-  remainingBalance: number;
 }
 
 export const expensePeriods: ExpensePeriod[] = [
@@ -113,17 +111,12 @@ export function saveExpenses(expenses: ExpenseRecord[]): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
 }
 
-export function calculateExpenseSummary(expenses: ExpenseRecord[], year: number, collection: number): ExpenseSummary {
-  const totalCollection = collection;
+export function calculateExpenseSummary(expenses: ExpenseRecord[], year: number): ExpenseSummary {
   const totalExpense = expenses
     .filter((expense) => expense.year === year)
     .reduce((total, expense) => total + expense.amount, 0);
 
-  return {
-    totalCollection,
-    totalExpense,
-    remainingBalance: totalCollection - totalExpense,
-  };
+  return { totalExpense };
 }
 
 export function calculatePeriodExpense(expenses: ExpenseRecord[], year: number, periodId: string): number {

@@ -1,5 +1,6 @@
 import type { ManagedMember } from "../data/memberManagement";
 import type { ExpenseRecord } from "./expenseService";
+import { loadLocalBatwaaraEntries, loadLocalBatwaaraYearAmounts, saveLocalBatwaaraEntry, saveLocalBatwaaraYearAmount, type BatwaaraEntry, type BatwaaraYearAmounts } from "./batwaaraService";
 import { parseRegisterDate, type MemberPayment } from "./registerService";
 import { requireSupabase } from "./supabaseClient";
 
@@ -43,6 +44,16 @@ type ExpenseRow = {
   receipt_id: string | null;
 };
 
+type BatwaaraEntryRow = {
+  id: string;
+  register_year: number;
+  member_id: string | null;
+  person_name: string;
+  amount: number | string | null;
+  given: boolean;
+  created_at: string;
+};
+
 const READ_PAGE_SIZE = 1000;
 
 export interface CloudRegisterData {
@@ -51,25 +62,34 @@ export interface CloudRegisterData {
   expenses: ExpenseRecord[];
 }
 
+function isMissingTableError(error: { code?: string; message?: string } | null | undefined) {
+  return error?.code === "42P01" || error?.code === "PGRST205";
+}
+
 function throwIfError(error: { code?: string; message: string } | null, operation: string) {
   if (!error) return;
 
   const guidance = error.code === "42501"
     ? "Your account does not have permission to make this change."
+    : error.code === "42P01" || error.code === "PGRST205"
+    ? "A required database table is not installed. Apply the current database migrations and try again."
     : error.code === "23505"
-      ? "A record with one of these identifiers already exists. Refresh the register and try again."
-      : error.code === "23503"
-        ? "A related record could not be found. Refresh the register and try again."
-        : error.code === "23514"
-          ? "One or more values are invalid. Check the form and try again."
-          : "Check your connection and admin access, then try again.";
+    ? "A record with one of these identifiers already exists. Refresh the register and try again."
+    : error.code === "23503"
+      ? "A related record could not be found. Refresh the register and try again."
+      : error.code === "23514"
+        ? "One or more values are invalid. Check the form and try again."
+        : "Check your connection and admin access, then try again.";
 
   console.error(`[E-Register] ${operation} failed (database error ${error.code ?? "unknown"}).`);
-  throw new Error(`${operation}. ${guidance}`);
+
+  const wrapped = new Error(`${operation}. ${guidance}`) as Error & { code?: string };
+  wrapped.code = error.code;
+  throw wrapped;
 }
 
 async function loadAllRows<T>(
-  loadPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  loadPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { code?: string; message: string } | null }>,
   operation: string,
 ): Promise<T[]> {
   const rows: T[] = [];
@@ -182,6 +202,29 @@ function rowToExpense(row: ExpenseRow): ExpenseRecord {
   };
 }
 
+function batwaaraEntryToRow(entry: BatwaaraEntry) {
+  return {
+    id: entry.id,
+    register_year: entry.year,
+    member_id: entry.memberId,
+    person_name: entry.name,
+    amount: entry.amount,
+    given: entry.given,
+  };
+}
+
+function rowToBatwaaraEntry(row: BatwaaraEntryRow): BatwaaraEntry {
+  return {
+    id: row.id,
+    year: row.register_year,
+    memberId: row.member_id,
+    name: row.person_name,
+    amount: row.amount === null ? null : Number(row.amount),
+    given: row.given,
+    createdAt: row.created_at,
+  };
+}
+
 async function readCloudRegister(): Promise<CloudRegisterData> {
   const client = requireSupabase();
   const [memberRows, paymentRows, expenseRows] = await Promise.all([
@@ -224,6 +267,91 @@ export async function loadCloudRegister(): Promise<CloudRegisterData> {
   return readCloudRegister();
 }
 
+export async function loadCloudBatwaaraEntries(): Promise<BatwaaraEntry[]> {
+  const client = requireSupabase();
+
+  try {
+    const rows = await loadAllRows<BatwaaraEntryRow>(
+      (from, to) => client.from("batwaara_entries")
+        .select("id,register_year,member_id,person_name,amount,given,created_at")
+        .order("created_at")
+        .order("id")
+        .range(from, to),
+      "Batwaara entries could not be loaded",
+    );
+
+    return rows.map(rowToBatwaaraEntry);
+  } catch (error) {
+    if (isMissingTableError(error instanceof Error && "code" in error ? error as { code?: string } : null)) {
+      console.warn("[E-Register] The Batwaara register table is missing; using local entries as a fallback.");
+      return loadLocalBatwaaraEntries();
+    }
+
+    throw error;
+  }
+}
+
+export async function saveCloudBatwaaraEntry(entry: BatwaaraEntry) {
+  const client = requireSupabase();
+
+  try {
+    const { error } = await client
+      .from("batwaara_entries")
+      .upsert(batwaaraEntryToRow(entry), { onConflict: "id" });
+
+    throwIfError(error, "Batwaara entry could not be saved");
+  } catch (error) {
+    if (isMissingTableError(error instanceof Error && "code" in error ? error as { code?: string } : null)) {
+      console.warn("[E-Register] The Batwaara register table is missing; saving the entry locally instead.");
+      saveLocalBatwaaraEntry(entry);
+      return;
+    }
+
+    throw error;
+  }
+}
+
+export async function loadCloudBatwaaraYearAmounts(): Promise<BatwaaraYearAmounts> {
+  const client = requireSupabase();
+
+  try {
+    const { data, error } = await client
+      .from("batwaara_year_settings")
+      .select("register_year,amount")
+      .order("register_year");
+
+    throwIfError(error, "Batwaara yearly amounts could not be loaded");
+    return Object.fromEntries((data ?? []).map((row) => [row.register_year, Number(row.amount)]));
+  } catch (error) {
+    if (isMissingTableError(error instanceof Error && "code" in error ? error as { code?: string } : null)) {
+      console.warn("[E-Register] The Batwaara yearly settings table is missing; using local yearly amounts as a fallback.");
+      return loadLocalBatwaaraYearAmounts();
+    }
+
+    throw error;
+  }
+}
+
+export async function saveCloudBatwaaraYearAmount(year: number, amount: number): Promise<void> {
+  const client = requireSupabase();
+
+  try {
+    const { error } = await client
+      .from("batwaara_year_settings")
+      .upsert({ register_year: year, amount }, { onConflict: "register_year" });
+
+    throwIfError(error, "Batwaara yearly amount could not be saved");
+  } catch (error) {
+    if (isMissingTableError(error instanceof Error && "code" in error ? error as { code?: string } : null)) {
+      console.warn("[E-Register] The Batwaara yearly settings table is missing; saving the yearly amount locally instead.");
+      saveLocalBatwaaraYearAmount(year, amount);
+      return;
+    }
+
+    throw error;
+  }
+}
+
 export async function checkCloudReadAccess() {
   const client = requireSupabase();
   async function canReadTable(table: "members" | "payments" | "expenses") {
@@ -245,8 +373,38 @@ export async function checkCloudReadAccess() {
 }
 
 export async function createCloudMember(member: ManagedMember) {
-  const { error } = await requireSupabase().from("members").insert(memberToRow(member));
-  throwIfError(error, "Member could not be saved");
+  const client = requireSupabase();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: existingRows, error: readError } = await client
+      .from("members")
+      .select("id,sno,account_number,archived_at")
+      .order("sno");
+    throwIfError(readError, "Existing member identifiers could not be checked");
+
+    const rows = existingRows ?? [];
+    const usedIds = new Set(rows.map((row) => row.id));
+    const usedAccountNumbers = new Set(rows.map((row) => row.account_number));
+    let sno = rows.reduce((maximum, row) => Math.max(maximum, row.sno), 0) + 1;
+    let id = `MF-${2400 + sno}`;
+    let accountNumber = `6100${String(sno).padStart(6, "0")}`;
+
+    while (usedIds.has(id) || usedAccountNumbers.has(accountNumber)) {
+      sno += 1;
+      id = `MF-${2400 + sno}`;
+      accountNumber = `6100${String(sno).padStart(6, "0")}`;
+    }
+
+    const nextMember = { ...member, id, sno, accountNumber };
+    const { error } = await client.from("members").insert(memberToRow(nextMember));
+    if (!error) return nextMember;
+
+    if (error.code !== "23505" || attempt === 2) {
+      throwIfError(error, "Member could not be saved");
+    }
+  }
+
+  throw new Error("Member could not be saved after retrying a member-number conflict. Refresh the register and try again.");
 }
 
 export async function createCloudMembersWithInitialPayments(members: ManagedMember[], payments: MemberPayment[]) {

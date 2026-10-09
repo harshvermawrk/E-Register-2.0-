@@ -5,11 +5,12 @@ import { formatMemberDate, toDateInput } from "../data/memberManagement";
 interface MemberFormModalProps {
   member: ManagedMember | null;
   initialJoinDate?: string;
+  saveError?: string;
   onClose: () => void;
   onSave: (fields: MemberFields) => void;
 }
 
-export default function MemberFormModal({ member, initialJoinDate, onClose, onSave }: MemberFormModalProps) {
+export default function MemberFormModal({ member, initialJoinDate, saveError, onClose, onSave }: MemberFormModalProps) {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [phone, setPhone] = useState("");
@@ -50,6 +51,7 @@ export default function MemberFormModal({ member, initialJoinDate, onClose, onSa
           </button>
         </div>
         <form onSubmit={submit} className="space-y-4 px-6 py-5">
+          {saveError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{saveError}</p>}
           {!member && <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-800">A member ID and account number will be assigned automatically.</div>}
           <label className="block text-sm font-medium text-slate-700">Full name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Asha Kapoor" className="form-control mt-1.5" /></label>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
